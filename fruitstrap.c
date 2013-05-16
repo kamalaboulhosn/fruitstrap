@@ -96,6 +96,62 @@ CFStringRef copy_device_support_path(AMDeviceRef device) {
         path = CFStringCreateWithFormat(NULL, NULL, CFSTR("/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/%@"), version);
         found = path_exists(path);
     }
+    if (!found) {
+        FILE* select_path = popen("xcode-select --print-path", "r");
+        if (select_path)
+        {
+            char buffer[1024];
+            char* result_path = fgets(buffer, sizeof(buffer), select_path);
+
+            char raw_version[10];
+            CFStringGetCString(version, raw_version, sizeof(raw_version), kCFStringEncodingASCII);
+
+            /* Remove subversion number */
+            bool dotFound = false;
+            int version_index = 0;
+            for(version_index = 0; version_index < sizeof(raw_version); version_index++)
+            {
+                if(raw_version[version_index] == '.' && !dotFound)
+                {
+                    dotFound = true;
+                }
+                else if(raw_version[version_index] == '.' && dotFound)
+                {
+                    raw_version[version_index] = '\0';
+                    break;
+                }
+            }
+            result_path[strlen(result_path) -1 + strlen("/Platforms/iPhoneOS.platform/DeviceSupport/")] = '\0';
+            strncpy(result_path + strlen(result_path) - 1, "/Platforms/iPhoneOS.platform/DeviceSupport/", strlen("/Platforms/iPhoneOS.platform/DeviceSupport/"));
+
+            /* Look at all versions in DeviceSupport to see if one is prefixed with the version we need */
+            DIR *dir;
+            struct dirent *ent;
+            if ((dir = opendir (result_path)) != NULL)
+            {
+                while ((ent = readdir (dir)) != NULL)
+                {
+                    bool isMatch = true;
+                    int matchIndex = 0;
+                    while(isMatch && matchIndex < strlen(raw_version) && matchIndex < strlen(ent->d_name))
+                    {
+                        if(ent->d_name[matchIndex] != raw_version[matchIndex])
+                        {
+                            isMatch = false;
+                        }
+                        matchIndex++;
+                    }
+                    if(isMatch)
+                    {
+                        path = CFStringCreateWithFormat(NULL, NULL, CFSTR("%s%s/DeveloperDiskImage.dmg"), result_path, ent->d_name);
+                        found = true;
+                        break;
+                    }
+                }
+                closedir (dir);
+            }
+        }
+    }
 
     CFRelease(version);
     CFRelease(build);
